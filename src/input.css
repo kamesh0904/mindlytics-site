@@ -1,0 +1,284 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ---------- motion tokens ----------
+     Three durations and three easings, used everywhere. If a number below
+     appears inline in a rule, that rule is wrong. */
+  :root {
+    --ease-soft:   cubic-bezier(.22,.61,.36,1);  /* reveals, hovers */
+    --ease-expo:   cubic-bezier(.16,1,.3,1);     /* headlines: fast out, long settle */
+    --ease-strong: cubic-bezier(.76,0,.24,1);    /* curtain panels */
+
+    --dur-text: 400ms;   /* supporting copy: barely there */
+    --dur-card: 500ms;   /* cards, list items */
+    --dur-hero: 700ms;   /* one or two elements per page */
+    --dur-line: 900ms;   /* headline line masks */
+
+    /* How long the intro curtain holds the screen on first load. The hero
+       entrance is keyed to this, so raising it delays the animation rather
+       than hiding it. Drop it to ~600ms if you want a faster first paint. */
+    --boot: 1200ms;
+
+    /* Page transitions. A click is covered for --dur-curtain, held fully black
+       for --hold so the label and progress bar are actually readable, then
+       uncovered for --dur-curtain again. Raise --hold for a longer loading
+       screen, lower it for a snappier one. site.js reads both. */
+    --dur-curtain: 600ms;  /* one column's travel */
+    --col-step: 45ms;      /* delay between columns; 5 columns, so 4 steps */
+    --hold: 600ms;
+  }
+
+  html { scroll-behavior: smooth; }
+  body { background: #000; color: #fff; overflow-x: hidden; }
+  :focus-visible { outline: 2px solid #A78BFA; outline-offset: 3px; }
+}
+
+@layer components {
+
+  /* ---------- curtain: page intro + page transitions ---------- */
+  #curtain { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
+  #curtain.busy { pointer-events: all; }
+  /* The cover is five columns that travel in one direction rather than a split
+     that opens back the way it closed. They fall in from above, hold, then keep
+     going down and off the bottom, so the new page is wiped into view instead
+     of being revealed by the entrance played backwards. */
+  #curtain .cols { position: absolute; inset: 0; display: flex; }
+  #curtain .col {
+    flex: 1 1 0; background: #000;
+    transform: translate3d(0, -100.5%, 0);
+    transition: transform var(--dur-curtain) var(--ease-strong);
+  }
+  #curtain.shut .col { transform: translate3d(0, 0, 0); }
+  #curtain.out .col  { transform: translate3d(0, 100.5%, 0); }
+
+  /* Left to right on the way in and again on the way out, so the wipe reads as
+     one continuous sweep through the page. */
+  #curtain .col:nth-child(1) { transition-delay: 0ms; }
+  #curtain .col:nth-child(2) { transition-delay: calc(var(--col-step) * 1); }
+  #curtain .col:nth-child(3) { transition-delay: calc(var(--col-step) * 2); }
+  #curtain .col:nth-child(4) { transition-delay: calc(var(--col-step) * 3); }
+  #curtain .col:nth-child(5) { transition-delay: calc(var(--col-step) * 4); }
+
+  /* Snapping the columns back above the fold after the wipe must not animate,
+     or they visibly slide back up across the new page. */
+  #curtain.reset .col { transition: none; }
+
+  #curtain .mark {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    opacity: 0; transition: opacity .3s ease;
+  }
+  #curtain.shut .mark { opacity: 1; transition-delay: .3s; }
+  #curtain.out .mark  { opacity: 0; transition-delay: 0s; }
+  #curtain .word {
+    font-size: clamp(26px, 3.6vw, 40px); font-weight: 700;
+    letter-spacing: -.035em; color: #fff;
+  }
+  #curtain .track {
+    width: min(220px, 46vw); height: 2px;
+    background: rgba(255,255,255,.14); overflow: hidden;
+  }
+  /* Scaled rather than widened: width is a layout property and animating it
+     makes the browser reflow every frame, transform does not. */
+  #curtain .bar {
+    display: block; height: 100%; width: 100%; background: #8B5CF6;
+    transform: scaleX(0); transform-origin: left;
+  }
+  /* Fills across the whole covered stretch, finishing just as the panels start
+     to lift, so it reads as real progress rather than decoration. */
+  #curtain.shut .bar {
+    transform: scaleX(1);
+    transition: transform
+                calc(var(--dur-curtain) + var(--col-step) * 4 + var(--hold) - 200ms)
+                cubic-bezier(.65,0,.35,1) 200ms;
+  }
+
+  /* First load: starts closed, then opens.
+     The opening is driven by CSS, not by site.js removing .boot, so a failed
+     or blocked script can never leave the black panels covering the page.
+     site.js drops .boot at the same moment, which hands the panels back to
+     the transition above with the identical end state, so nothing jumps.
+     The hold is --boot, short on purpose: the hero entrance below starts as
+     the panels part, so a long curtain would play the best animation on the
+     page behind a black screen. */
+  #curtain.boot .col {
+    transform: translate3d(0, 0, 0);
+    animation: colOut var(--dur-curtain) var(--ease-strong) forwards;
+  }
+  #curtain.boot .col:nth-child(1) { animation-delay: var(--boot); }
+  #curtain.boot .col:nth-child(2) { animation-delay: calc(var(--boot) + var(--col-step) * 1); }
+  #curtain.boot .col:nth-child(3) { animation-delay: calc(var(--boot) + var(--col-step) * 2); }
+  #curtain.boot .col:nth-child(4) { animation-delay: calc(var(--boot) + var(--col-step) * 3); }
+  #curtain.boot .col:nth-child(5) { animation-delay: calc(var(--boot) + var(--col-step) * 4); }
+  #curtain.boot .mark { opacity: 1; animation: bootFade .25s ease var(--boot) forwards; }
+  #curtain.boot .bar { animation: bootBar var(--boot) cubic-bezier(.65,0,.35,1) forwards; }
+  @keyframes bootBar { to { transform: scaleX(1); } }
+  @keyframes colOut  { to { transform: translate3d(0, 100.5%, 0); } }
+  @keyframes bootFade { to { opacity: 0; } }
+
+  /* ---------- staggered page entrance ----------
+     --enter-base waits out the intro curtain on first load. A client-side page
+     swap adds .replay, where the curtain is already open and the wait is zero.
+     Headings opt out: they animate line by line instead (see .lnMask). */
+  .pageIn { --enter-base: var(--boot); }
+  .pageIn.replay { --enter-base: 0ms; }
+
+  .pageIn > *:not([data-lines]) {
+    opacity: 0; transform: translate3d(0, 22px, 0);
+    animation: pgUp .8s var(--ease-soft) forwards;
+    animation-delay: calc(var(--enter-base, 0ms) + var(--pg-i, 0ms));
+  }
+  .pageIn > *:nth-child(1) { --pg-i:  50ms; }
+  .pageIn > *:nth-child(2) { --pg-i: 140ms; }
+  .pageIn > *:nth-child(3) { --pg-i: 230ms; }
+  .pageIn > *:nth-child(4) { --pg-i: 320ms; }
+  @keyframes pgUp { to { opacity: 1; transform: none; } }
+
+  /* ---------- headline line masks ----------
+     site.js splits [data-lines] headings into one mask per visual line, then
+     each line rises out from under its own edge. The padding/margin pair gives
+     descenders room, otherwise overflow:hidden shears the tail off a 'y'. */
+  .lnMask {
+    display: block; overflow: hidden;
+    padding-bottom: .14em; margin-bottom: -.14em;
+  }
+  .js [data-lines] .lnIn {
+    display: block; opacity: 0; transform: translate3d(0, 110%, 0);
+    transition: transform var(--dur-line) var(--ease-expo),
+                opacity calc(var(--dur-line) * .6) linear;
+  }
+  .js [data-lines].in .lnIn { opacity: 1; transform: none; }
+
+  /* ---------- hero mandala (home page) ---------- */
+  .mandala {
+    position: absolute; top: 50%; right: -8%;
+    width: 780px; height: 780px;
+    transform: translateY(-50%); pointer-events: none; z-index: 0;
+  }
+  @media (max-width: 1279px) { .mandala { width: 640px; height: 640px; right: -16%; } }
+  @media (max-width: 1023px) {
+    .mandala { right: auto; left: 50%; transform: translate(-50%,-50%); width: 580px; height: 580px; opacity: .5; }
+  }
+  @media (max-width: 560px) { .mandala { width: 430px; height: 430px; opacity: .38; } }
+
+  .spin-a, .spin-b, .spin-c { transform-box: view-box; transform-origin: center; }
+  .spin-a { animation: spin 150s linear infinite; }
+  .spin-b { animation: spin 105s linear infinite reverse; }
+  .spin-c { animation: spin 68s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- reversible scroll motion, three tiers ----------
+     data-reveal picks the weight, data-dir picks the direction. Everything
+     used to be one 800ms/72px move, which made a footnote as loud as a hero.
+     Supporting copy is now the default and barely travels. */
+  .js [data-dir], .js [data-reveal] {
+    --dur: var(--dur-text);
+    --travel: 14px;
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease-soft),
+                transform var(--dur) var(--ease-soft),
+                filter var(--dur) var(--ease-soft);
+  }
+  .js [data-reveal="card"] { --dur: var(--dur-card); --travel: 26px; }
+  .js [data-reveal="hero"] { --dur: var(--dur-hero); --travel: 44px; filter: blur(6px); }
+
+  .js [data-dir="l"] { transform: translate3d(calc(-1 * var(--travel)), 0, 0); }
+  .js [data-dir="r"] { transform: translate3d(var(--travel), 0, 0); }
+  .js [data-dir="u"],
+  .js [data-reveal]:not([data-dir]) { transform: translate3d(0, var(--travel), 0); }
+
+  /* Cards also settle in from very slightly small. */
+  .js [data-reveal="card"][data-dir="l"] { transform: translate3d(calc(-1 * var(--travel)), 0, 0) scale(.97); }
+  .js [data-reveal="card"][data-dir="r"] { transform: translate3d(var(--travel), 0, 0) scale(.97); }
+  .js [data-reveal="card"][data-dir="u"],
+  .js [data-reveal="card"]:not([data-dir]) { transform: translate3d(0, var(--travel), 0) scale(.97); }
+
+  .js [data-dir].in, .js [data-reveal].in { opacity: 1; transform: none; filter: blur(0); }
+
+  /* ---------- cursor spotlight on cards ----------
+     Painted as the card's own background-image rather than a pseudo-element,
+     so it sits above the background colour and below the text with no
+     stacking-context work. @property makes the alpha animatable; without it
+     the spotlight simply snaps on, which is a fine degradation. */
+  .spot {
+    --spot-a: 0;
+    --spot-rgb: 139, 92, 246;
+    background-repeat: no-repeat;
+    background-image: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%),
+                      rgba(var(--spot-rgb), calc(var(--spot-a) * .16)), transparent 72%);
+    transition: --spot-a .35s ease, border-color .3s ease, transform .3s var(--ease-soft);
+  }
+  .spot:hover { --spot-a: 1; }
+  .spot-light { --spot-rgb: 255, 255, 255; }
+
+  .cardNum { transition: transform .35s var(--ease-soft); }
+  .spot:hover .cardNum { transform: translateY(-3px); }
+
+  .chip { transition: border-color .3s ease, color .3s ease; }
+  .spot:hover .chip { border-color: rgba(167,139,250,.45); color: #ddd6fe; }
+  .spot:hover .chip:nth-child(1) { transition-delay:   0ms; }
+  .spot:hover .chip:nth-child(2) { transition-delay:  45ms; }
+  .spot:hover .chip:nth-child(3) { transition-delay:  90ms; }
+  .spot:hover .chip:nth-child(4) { transition-delay: 135ms; }
+  .spot:hover .chip:nth-child(5) { transition-delay: 180ms; }
+  .spot:hover .chip:nth-child(6) { transition-delay: 225ms; }
+
+  /* ---------- AWS badge carousel ----------
+     The slides stack in a single grid cell and cross-fade. The first carries
+     .is-on from the markup, so with scripting off one badge is still shown. */
+  .awsBadge {
+    grid-area: 1 / 1;
+    opacity: 0;
+    transition: opacity .4s var(--ease-soft);
+  }
+  .awsBadge.is-on { opacity: 1; }
+
+  /* ---------- per-letter link hover ---------- */
+  [data-lh] { display: inline-flex; line-height: 1.25; }
+  .lhc {
+    display: inline-block; position: relative; overflow: hidden; height: 1.25em;
+    transition: transform .34s cubic-bezier(.22,.61,.36,1);
+  }
+  .lhc .t { display: block; height: 1.25em; }
+  a:hover [data-lh] .lhc,
+  button:hover [data-lh] .lhc { transform: translateY(-1.25em); }
+}
+
+@property --spot-a {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+
+/* ---------- accessibility: honour reduced motion ----------
+   Reduced motion means less motion, not none. Everything below still fades,
+   so the page does not snap into place; what goes away is travel, scale,
+   blur, and anything that loops. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  #curtain { display: none !important; }
+  /* No curtain to wait for, so nothing should sit through its timing. */
+  .pageIn { --enter-base: 0ms; }
+
+  .js [data-dir], .js [data-reveal],
+  .js [data-dir].in, .js [data-reveal].in {
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .pageIn > *:not([data-lines]) {
+    transform: none !important;
+    animation-name: pgFade !important;
+  }
+  @keyframes pgFade { to { opacity: 1; } }
+
+  .js [data-lines] .lnIn { transform: none !important; }
+  .lnMask { overflow: visible; }
+
+  .lhc { transition: none !important; }
+  .spot { background-image: none !important; }
+  .spot:hover .cardNum { transform: none !important; }
+  .spin-a, .spin-b, .spin-c { animation: none !important; }
+}

@@ -1,0 +1,218 @@
+/* =============================================================================
+   Curtain page transition — stylesheet
+   -----------------------------------------------------------------------------
+   Expected markup, once per page, as a direct child of <body>:
+
+     <div id="curtain" class="boot" aria-hidden="true">
+       <div class="panel t"></div>
+       <div class="panel b"></div>
+       <div class="mark">
+         <div class="label" id="curtain-label">Your Site</div>
+         <div class="track"><span class="bar"></span></div>
+       </div>
+     </div>
+
+   Plus a <main id="main"> wrapping the part of the page that changes.
+
+   The class="boot" is the first-load variant: the panels ship already meeting
+   in the centre and open once. See the FIRST LOAD block at the bottom for why
+   that opening is an animation rather than something curtain.js does.
+   ========================================================================== */
+
+:root {
+  --curtain-dur:   800ms;                        /* one panel's travel */
+  --curtain-hold:  260ms;                        /* covered, after the swap */
+  --curtain-boot: 1000ms;                        /* first load: time held shut */
+  --curtain-ease:  cubic-bezier(.76, 0, .24, 1); /* slow ends, fast middle */
+
+  --curtain-bg:     #000;
+  --curtain-fg:     #fff;
+  --curtain-accent: #8b5cf6;
+}
+
+/* -----------------------------------------------------------------------------
+   The cover
+   -------------------------------------------------------------------------- */
+
+#curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;   /* while open it must never eat a click */
+}
+
+/* Only while a transition is running. Without this a visitor can click a link
+   they can no longer see, queueing a navigation they did not mean. */
+#curtain.busy { pointer-events: auto; }
+
+#curtain .panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* 50.3, not 50. At exactly half, sub-pixel rounding on fractional viewport
+     heights and non-integer devicePixelRatios leaves a hairline of the page
+     showing along the seam. The extra 0.3% overlaps the two panels. */
+  height: 50.3%;
+  background: var(--curtain-bg);
+  transition: transform var(--curtain-dur) var(--curtain-ease);
+}
+
+/* Parked just off-screen. translate3d, not translateY: it keeps the panels on
+   their own compositor layer, so closing them never triggers layout or paint. */
+#curtain .panel.t { top: 0;    transform: translate3d(0, -100%, 0); }
+#curtain .panel.b { bottom: 0; transform: translate3d(0,  100%, 0); }
+
+/* The whole closing gesture. curtain.js does nothing but add this class. */
+#curtain.shut .panel.t,
+#curtain.shut .panel.b { transform: translate3d(0, 0, 0); }
+
+/* -----------------------------------------------------------------------------
+   Destination label and progress bar
+   -------------------------------------------------------------------------- */
+
+#curtain .mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+
+/* Held back until the panels have nearly met, otherwise the label is legible
+   through the gap while it is still closing. */
+#curtain.shut .mark {
+  opacity: 1;
+  transition-delay: calc(var(--curtain-dur) * .45);
+}
+
+#curtain .label {
+  font: 700 clamp(26px, 3.6vw, 40px)/1 system-ui, -apple-system, sans-serif;
+  letter-spacing: -.035em;
+  color: var(--curtain-fg);
+}
+
+#curtain .track {
+  width: min(220px, 46vw);
+  height: 2px;
+  background: rgb(255 255 255 / .16);
+  overflow: hidden;
+}
+
+/* Scaled, not widened. Animating width makes the browser re-run layout on every
+   frame; a transform is handed to the compositor and costs nothing. */
+#curtain .bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--curtain-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* Fills across closing plus hold, so it completes as the panels start to part.
+   It is a rough indicator of the transition, not of real fetch progress —
+   fetch() cannot report progress on a response you are going to read in full. */
+#curtain.shut .bar {
+  transform: scaleX(1);
+  transition: transform calc(var(--curtain-dur) + var(--curtain-hold))
+              cubic-bezier(.65, 0, .35, 1) 120ms;
+}
+
+/* -----------------------------------------------------------------------------
+   Entrance animation for swapped-in content
+   Replayed by curtain.js after each swap. Keep it to transform and opacity.
+   -------------------------------------------------------------------------- */
+
+.enter > * {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0);
+  animation: curtain-enter .8s cubic-bezier(.22, .61, .36, 1) forwards;
+  animation-delay: calc(var(--enter-base, 0ms) + var(--enter-i, 0ms));
+}
+.enter > *:nth-child(1) { --enter-i:  50ms; }
+.enter > *:nth-child(2) { --enter-i: 140ms; }
+.enter > *:nth-child(3) { --enter-i: 230ms; }
+.enter > *:nth-child(4) { --enter-i: 320ms; }
+
+@keyframes curtain-enter { to { opacity: 1; transform: none; } }
+
+/* On first load the entrance waits out the curtain, otherwise it plays behind
+   a black screen and nobody sees it. .replay is added after a swap, where the
+   curtain is already open and there is nothing to wait for. */
+.enter        { --enter-base: var(--curtain-boot); }
+.enter.replay { --enter-base: 0ms; }
+
+/* Scroll reveals, bound in activate(). Gated on .js so that with scripting off
+   the observer never runs and the content is simply visible. */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translate3d(0, 20px, 0);
+  transition: opacity .5s var(--curtain-ease), transform .5s var(--curtain-ease);
+}
+.js [data-reveal].in { opacity: 1; transform: none; }
+
+/* -----------------------------------------------------------------------------
+   FIRST LOAD
+   The page ships with class="boot" and the panels already meeting, so there is
+   no flash of content before the curtain arrives.
+
+   That opening is a CSS animation on purpose. If JavaScript were the thing that
+   opened it, then a script that 404s, throws, or is blocked would leave every
+   visitor staring at a black screen with no way out — and "the site works with
+   JavaScript disabled" would be false in the worst possible way. Here the panels
+   leave on their own, and curtain.js only removes the class afterwards.
+
+   The animation ends exactly where the parked state above sits, so dropping
+   .boot hands the panels back to the transition with nothing to jump to.
+   -------------------------------------------------------------------------- */
+
+#curtain.boot .panel.t,
+#curtain.boot .panel.b { transform: translate3d(0, 0, 0); }
+
+#curtain.boot .panel.t {
+  animation: curtain-part-up var(--curtain-dur) var(--curtain-ease)
+             var(--curtain-boot) forwards;
+}
+#curtain.boot .panel.b {
+  animation: curtain-part-down var(--curtain-dur) var(--curtain-ease)
+             var(--curtain-boot) forwards;
+}
+#curtain.boot .mark {
+  opacity: 1;
+  animation: curtain-mark-out .25s ease var(--curtain-boot) forwards;
+}
+#curtain.boot .bar {
+  animation: curtain-fill var(--curtain-boot) cubic-bezier(.65, 0, .35, 1) forwards;
+}
+
+@keyframes curtain-part-up   { to { transform: translate3d(0, -100%, 0); } }
+@keyframes curtain-part-down { to { transform: translate3d(0,  100%, 0); } }
+@keyframes curtain-mark-out  { to { opacity: 0; } }
+@keyframes curtain-fill      { to { transform: scaleX(1); } }
+
+/* -----------------------------------------------------------------------------
+   Reduced motion
+   Hidden here as well as skipped in JS. Belt and braces: if the stylesheet loads
+   and the script does not, the curtain must still never appear — and .boot would
+   otherwise cover the page.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #curtain { display: none !important; }
+
+  .enter > * {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+  .js [data-reveal],
+  .js [data-reveal].in {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,19 @@
+# Dependencies — restored from package-lock.json
+node_modules/
+
+# Build output. Vercel regenerates this from source on every push
+# (see vercel.json), so committing it would only ever go stale.
+dist/
+
+# Vercel's local project link
+.vercel/
+
+# Local editor and agent config
+.claude/
+
+# Hand-off bundle, rebuilt on demand
+mindlytics-site.zip
+
+# OS noise
+Thumbs.db
+.DS_Store
